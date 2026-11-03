@@ -36,8 +36,13 @@ function connect() {
   ws.onopen = () => {
     setStatus('online', 'online');
     reconnectDelay = 1000; // reset backoff
-    ws.send(JSON.stringify({ type: 'join', name: localStorage.getItem('name') || prompt('Your name?') || 'Guest' }));
-    localStorage.setItem('name', me?.name || localStorage.getItem('name'));
+    // Accessible name handling: ask once, remember in localStorage (no prompt on every load)
+    let name = localStorage.getItem('name');
+    if (!name) {
+      name = prompt('Your name?');
+      if (name) localStorage.setItem('name', name);
+    }
+    ws.send(JSON.stringify({ type: 'join', name: name || 'Guest' }));
   };
 
   ws.onmessage = e => handle(JSON.parse(e.data));
@@ -76,14 +81,14 @@ function handle(msg) {
       break;
     case 'task:created':
       tasks.set(msg.task.id, msg.task);
-      render();
+      render(msg.task.id);          // targeted patch, not full rebuild
       break;
     case 'task:updated': {
       const local = tasks.get(msg.task.id);
       // Ignore stale updates arriving out of order
       if (!local || msg.task.version >= local.version) {
         tasks.set(msg.task.id, msg.task);
-        render();
+        render(msg.task.id);        // targeted patch, not full rebuild
       }
       break;
     }
@@ -94,7 +99,7 @@ function handle(msg) {
     case 'conflict':
       // Someone else edited first — server wins, show a notice
       tasks.set(msg.task.id, msg.task);
-      render();
+      render(msg.task.id);
       toast(`⚠️ Your edit conflicted with ${msg.task.updatedBy || 'another user'}. Board was refreshed with the latest version.`);
       break;
     case 'error':
@@ -114,13 +119,26 @@ function send(payload) {
 }
 
 // ---------- Rendering ----------
-function render() {
+function render(changedId = null) {
+  // Single-task change: patch just that card (O(1) DOM work)
+  if (changedId && tasks.has(changedId)) return patchCard(tasks.get(changedId));
+  // Full pass: skip columns whose task list is unchanged (keyed by id:version)
   document.querySelectorAll('.column').forEach(col => {
     const list = col.querySelector('.cards');
-    list.innerHTML = '';
     const colTasks = [...tasks.values()].filter(t => t.column === col.dataset.column);
+    const key = colTasks.map(t => t.id + ':' + t.version).join(',');
+    if (list.dataset.key === key) return;   // unchanged column: skip DOM work
+    list.dataset.key = key;
+    list.innerHTML = '';
     colTasks.forEach(task => list.appendChild(cardEl(task)));
   });
+}
+
+// Replace a single card in place instead of rebuilding columns
+function patchCard(task) {
+  const old = document.querySelector(`.card[data-id="${task.id}"]`);
+  if (!old) return render(); // card not on screen yet (e.g. moved column) → full render
+  old.replaceWith(cardEl(task));
 }
 
 function cardEl(task) {
@@ -128,6 +146,9 @@ function cardEl(task) {
   card.className = 'card';
   card.draggable = true;
   card.dataset.id = task.id;
+  card.tabIndex = 0;                    // cards reachable with Tab
+  card.setAttribute('role', 'listitem');
+  card.setAttribute('aria-label', `Task: ${task.title}, in ${task.column}`);
 
   const title = document.createElement('div');
   title.className = 'title';
@@ -149,12 +170,31 @@ function cardEl(task) {
   const left = document.createElement('button'); left.textContent = '◀';
   const del  = document.createElement('button'); del.textContent  = '✕';
   const right= document.createElement('button'); right.textContent= '▶';
-  const move = col => send({ type: 'task:update', id: task.id, column: col, version: task.version });
-  left.onclick = () => move(task.column === 'done' ? 'doing' : 'todo');
-  right.onclick = () => move(task.column === 'todo' ? 'doing' : 'done');
-  del.onclick = () => send({ type: 'task:delete', id: task.id });
-  actions.append(left, del, right);
 
+  const move = col => send({ type: 'task:update', id: task.id, column: col, version: task.version });
+  const moveLeft  = () => move(task.column === 'done' ? 'doing' : 'todo');
+  const moveRight = () => move(task.column === 'todo' ? 'doing' : 'done');
+  left.onclick = moveLeft;
+  right.onclick = moveRight;
+  del.onclick = () => send({ type: 'task:delete', id: task.id });   // ← was missing
+
+  // Accessible names for icon-only buttons (screen readers announce these)
+  left.setAttribute('aria-label', `Move ${task.title} left`);
+  right.setAttribute('aria-label', `Move ${task.title} right`);
+  del.setAttribute('aria-label', `Delete ${task.title}`);
+
+  // Keyboard navigation: arrows move, Enter/Space edits, Delete removes
+  card.onkeydown = e => {
+    if (e.key === 'ArrowRight') { e.preventDefault(); moveRight(); }
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); moveLeft(); }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      title.focus();                    // Enter starts editing the title
+    }
+    if (e.key === 'Delete') del.click();
+  };
+
+  actions.append(left, del, right);
   card.append(title, meta, actions);
 
   // Drag & drop between columns
@@ -180,7 +220,7 @@ function renderPresence(users) {
   const el = $('#presenceList');
   el.innerHTML = '';
   users.forEach(u => {
-    const chip = document.createElement('span');
+    const chip = document.createElement('li');   // presence list is a <ul> now
     chip.className = 'user-chip';
     chip.style.background = u.color;
     chip.textContent = u.name + (me && u.id === me.id ? ' (you)' : '');

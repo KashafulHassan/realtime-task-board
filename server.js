@@ -2,8 +2,40 @@ const express = require("express");
 const http = require("http");
 const { WebSocketServer } = require("ws");
 const crypto = require("crypto");
+const zlib = require("zlib");
 
 const app = express();
+
+// --- Caching strategy ---
+// HTML must always be fresh (it references the other files by name)
+app.use((req, res, next) => {
+  if (req.path === "/" || req.path.endsWith(".html")) {
+    res.set("Cache-Control", "no-cache"); // revalidate, never serve stale HTML
+  } else {
+    res.set("Cache-Control", "public, max-age=86400"); // assets cached for 1 day
+  }
+  next();
+});
+
+// --- Gzip compression for all text responses ---
+app.use((req, res, next) => {
+  const accept = req.headers["accept-encoding"] || "";
+  if (!accept.includes("gzip") || req.method !== "GET") return next();
+  const send = res.send.bind(res);
+  res.send = (body) => {
+    if (typeof body === "string" || Buffer.isBuffer(body)) {
+      const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
+      if (buf.length > 1024) { // don't compress tiny payloads
+        res.set("Content-Encoding", "gzip");
+        res.set("Content-Type", res.get("Content-Type") || "text/plain");
+        return send(zlib.gzipSync(buf));
+      }
+    }
+    return send(body);
+  };
+  next();
+});
+
 app.use(express.static("public"));
 
 const server = http.createServer(app);
