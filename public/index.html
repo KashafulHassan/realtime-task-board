@@ -3,32 +3,46 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Real-time collaborative Kanban task board with live presence and conflict-safe editing." />
   <title>Live Task Board</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <a class="skip-link" href="#board">Skip to the board</a>
+
   <header>
     <h1>📋 Live Task Board</h1>
-    <div id="status" class="status">connecting…</div>
+    <p id="status" class="status" role="status" aria-live="polite">connecting…</p>
   </header>
 
-  <section class="presence">
-    <strong>Online:</strong>
-    <div id="presenceList"></div>
+  <section class="presence" aria-label="Users currently online">
+    <h2 class="visually-hidden">Online users</h2>
+    <ul id="presenceList" aria-label="Online users"></ul>
   </section>
 
-  <div class="board" id="board">
-    <div class="column" data-column="todo"><h2>Todo</h2><div class="cards"></div></div>
-    <div class="column" data-column="doing"><h2>In Progress</h2><div class="cards"></div></div>
-    <div class="column" data-column="done"><h2>Done</h2><div class="cards"></div></div>
-  </div>
+  <main class="board" id="board">
+    <section class="column" data-column="todo" aria-labelledby="col-todo">
+      <h2 id="col-todo">Todo</h2>
+      <ul class="cards" aria-label="Todo tasks"></ul>
+    </section>
+    <section class="column" data-column="doing" aria-labelledby="col-doing">
+      <h2 id="col-doing">In Progress</h2>
+      <ul class="cards" aria-label="In progress tasks"></ul>
+    </section>
+    <section class="column" data-column="done" aria-labelledby="col-done">
+      <h2 id="col-done">Done</h2>
+      <ul class="cards" aria-label="Done tasks"></ul>
+    </section>
+  </main>
 
-  <form id="addForm">
+  <form id="addForm" aria-label="Add a new task">
+    <label class="visually-hidden" for="titleInput">New task title</label>
     <input id="titleInput" placeholder="New task title…" maxlength="120" required />
     <button type="submit">Add task</button>
   </form>
 
-  <div id="toast" class="toast"></div>
-  <script src="app.js"></script>
+  <div id="toast" class="toast" role="alert" aria-live="assertive"></div>
+
+  <script src="app.js" defer></script>
 </body>
 </html>
