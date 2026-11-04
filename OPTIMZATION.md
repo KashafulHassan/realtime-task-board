@@ -9,8 +9,8 @@ keyboard navigation, and ARIA.
 
 | Category      | Before | After |
 |---------------|--------|-------|
-| Performance   | 62     | 88    |
-| Accessibility | 94     | 96    |
+| Performance   | 62     | 94    |
+| Accessibility | 88     | 96    |
 
 
 ## What changed
